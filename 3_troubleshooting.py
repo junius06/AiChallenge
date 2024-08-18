@@ -1,6 +1,6 @@
 import os
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ConversationHandler, CommandHandler, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, ConversationHandler, CommandHandler, MessageHandler, filters, ContextTypes
 import asyncio
 import nest_asyncio
 import openai
@@ -18,10 +18,10 @@ class Start():
         
     async def start(self, update: Update, context) -> None:
         message = (
-            "안녕하세요. 신규자 교육용 OJT 챗봇입니다. 다음 명령을 이용할 수 있습니다:"
-            "/training - 트러블 슈팅 트레이닝을 시작할 수 있습니다."
-            "/rules - 씨피랩스 사내 규정에 대하여 안내합니다."
-            "/services - 씨피랩스에서 운영중인 서비스에 대하여 소개합니다."
+            "안녕하세요. 신규자 교육용 OJT 챗봇입니다. 다음 명령을 이용할 수 있습니다:\n\n"
+            "/training - 트러블 슈팅 트레이닝을 시작할 수 있습니다.\n"
+            "/rules - 씨피랩스 사내 규정에 대하여 안내합니다.\n"
+            "/services - 씨피랩스에서 운영중인 서비스에 대하여 소개합니다.\n"
             "/quiz - 퀴즈"
         )
         await self.logger_util.cmd_logs_msg(update)
@@ -32,62 +32,67 @@ class ChatGPT():
     def __init__(self):
         openai.api_key = API_KEY
         
-    @staticmethod
-    async def request_chat_gpt(prompt, update: Update):
-        user_message = update.message.text
+    async def request_chat_gpt(self, prompt: str) -> str:
         try: 
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 max_tokens=512, # 256~2048
-                temperature=0.4, # 0~1
+                temperature=0.2, # 0~1
                 messages=[
                     {
-                        "role": "system", "content": "You are an expert in server and network troubleshooting.",
-                        "role": "user", "content": user_message
+                        "role": "system", 
+                        "content": "당신은 데브옵스 엔지니어이며 서버와 네트워크에 대한 전문가입니다. 모든 응답을 한국어로 해주세요."
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    },
+                    {
+                        "role": "assistant", 
+                        "content": "제 전문 지식을 바탕으로 이 문제를 해결할 수 있는 최선의 해결책을 소개합니다."
                     }
                 ]
             )
-            # default
-            # return response.choices[0].message.content
-            
-            # OpenAI의 응답 텍스트를 가져오기
-            answer = response.choices[0].message['content'].strip()
-
-            # 사용자에게 응답 전송
-            await update.message.reply_text(answer)
+            return response.choices[0].message['content'].strip()
                     
         except Exception as e:
             return "Sorry, I can't respond at the moment."
         
 # 트러블 슈팅 데이터 로드, 문제 제시 및 평가 클래스
-data_files_path = os.path.join(os.path.dirname(__file__), 'troubleshooting_data', 'data.sjon')
-with open(data_files_path, "r") as file:
-    troubleshooting_data = json.load(file)
+
 
 class TroubleshootingTraining:
     def __init__(self, chatgpt: ChatGPT):
         self.chatgpt = chatgpt
         self.current_issue = None
         self.current_solution = None
+        
+        # 트러블슈팅 데이터 로드
+        data_files_path = os.path.join(os.path.dirname(__file__), 'troubleshooting_data', 'data.json')
+        with open(data_files_path, "r") as file:
+            self.troubleshooting_data = json.load(file)
 
-    async def start_training(self, update: Update) -> None:
+    async def start_training(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # 랜덤 문제 선택
-        problem = random.choice(troubleshooting_data)
+        problem = random.choice(self.troubleshooting_data)
         self.current_issue = problem["issue"]
         self.current_solution = problem["expected_solution"]
 
         # 문제 제시
-        await update.message.reply_text(f"문제: {self.current_issue}\n문제를 해결하기 위한 방안을 제시하세요.")
+        await update.message.reply_text(f"문제 : {self.current_issue}\n\n문제를 해결하기 위한 방안을 제시하세요.")
 
-    async def evaluate_solution(self, update: Update) -> None:
+    async def evaluate_solution(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user_solution = update.message.text
-        prompt = f"Evaluate how close the following user-provided solution is to the expected solution: '{self.current_solution}'.\nUser solution: {user_solution}"
+        prompt = f"유저가 제공한 해결책이 예상 해결책에 얼마나 가까운지 평가해주세요. : '{self.current_solution}'.\n사용자 해결책 : {user_solution}"
         
         # ChatGPT API를 통해 평가 요청
         evaluation = await self.chatgpt.request_chat_gpt(prompt)
 
         # 평가 결과 반환
-        await update.message.reply_text(f"평가 결과: {evaluation}")
+        await update.message.reply_text(f"평가 결과 : {evaluation}")
+        
+        # 대화 종료
+        return ConversationHandler.END
 
 # 메인 함수
 async def main() -> None:
