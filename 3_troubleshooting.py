@@ -1,7 +1,6 @@
 import os
-import telebot
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ConversationHandler, CommandHandler, MessageHandler
+from telegram.ext import ApplicationBuilder, ConversationHandler, CommandHandler, MessageHandler, filters
 import asyncio
 import nest_asyncio
 import openai
@@ -59,18 +58,49 @@ class ChatGPT():
                     
         except Exception as e:
             return "Sorry, I can't respond at the moment."
+        
+# 트러블 슈팅 데이터 로드, 문제 제시 및 평가 클래스
+data_files_path = os.path.join(os.path.dirname(__file__), 'troubleshooting_data', 'data.sjon')
+with open(data_files_path, "r") as file:
+    troubleshooting_data = json.load(file)
+
+class TroubleshootingTraining:
+    def __init__(self, chatgpt: ChatGPT):
+        self.chatgpt = chatgpt
+        self.current_issue = None
+        self.current_solution = None
+
+    async def start_training(self, update: Update) -> None:
+        # 랜덤 문제 선택
+        problem = random.choice(troubleshooting_data)
+        self.current_issue = problem["issue"]
+        self.current_solution = problem["expected_solution"]
+
+        # 문제 제시
+        await update.message.reply_text(f"문제: {self.current_issue}\n문제를 해결하기 위한 방안을 제시하세요.")
+
+    async def evaluate_solution(self, update: Update) -> None:
+        user_solution = update.message.text
+        prompt = f"Evaluate how close the following user-provided solution is to the expected solution: '{self.current_solution}'.\nUser solution: {user_solution}"
+        
+        # ChatGPT API를 통해 평가 요청
+        evaluation = await self.chatgpt.request_chat_gpt(prompt)
+
+        # 평가 결과 반환
+        await update.message.reply_text(f"평가 결과: {evaluation}")
 
 # 메인 함수
 async def main() -> None:
-    # 애플리케이션 빌드
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     
+    chatgpt = ChatGPT()
     start_handler = Start()
+    training_handler = TroubleshootingTraining(chatgpt)
     
-    # /start 명령어 핸들러 추가
     application.add_handler(CommandHandler("start", start_handler.start))
-    
-    # 애플리케이션 실행
+    application.add_handler(CommandHandler("training", training_handler.start_training))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, training_handler.evaluate_solution))
+
     await application.run_polling()
 
 if __name__ == '__main__':
