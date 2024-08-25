@@ -9,7 +9,7 @@ class LoggerUtility:
         self.logger = self.log_format()
         self.mask_httpx_logging()
         
-    ##### 로그 포맷 설정 #####
+    # 로그 포맷 설정
     def log_format(self):
         now = datetime.now()
         today = now.strftime("%Y%m%d")
@@ -26,8 +26,11 @@ class LoggerUtility:
         
         logger = logging.getLogger(__name__)
         return logger
+    
+    def log_msg(self, message: str):
+        self.logger.info(message)
 
-    ##### httpx 로그 필터 설정 #####
+    # httpx 로그 필터 설정
     def mask_httpx_logging(self):
         httpx_logger = logging.getLogger("httpx")
         httpx_logger.setLevel(logging.INFO)
@@ -37,13 +40,15 @@ class LoggerUtility:
                 super().__init__()
                 self.last_logged_time = None
                 
+            # 로그 메세지에 'bot{BOT_TOKEN}' 대신 'botMASKED_TOKEN' 값으로 변환되어 기록
             def filter(self, record):
                 if BOT_TOKEN in record.getMessage():
                     record.msg = record.msg.replace(BOT_TOKEN, 'MASKED_TOKEN')
                     
+                # HTTP Request: POST 메세지에 대해서 10분 간격으로 출력되도록 필터링
                 if "HTTP Request: POST" in record.getMessage():
                     current_time = datetime.now()
-                    if self.last_logged_time is None or current_time - self.last_logged_time > timedelta(minutes=10):
+                    if self.last_logged_time is None or current_time - self.last_logged_time > timedelta(minutes=1):
                         self.last_logged_time = current_time
                         return True
                     return False
@@ -51,7 +56,7 @@ class LoggerUtility:
 
         httpx_logger.addFilter(MaskingFilter())
         
-    ##### 봇 사용자 정보 로깅 #####
+    # 봇 사용자 정보 로깅
     def user_info_log(self, update: Update):
         user = update.effective_user
         chat_id = update.effective_chat.id
@@ -63,7 +68,7 @@ class LoggerUtility:
         
         return user_info
 
-    ##### 커맨드 실행시 로그 메세지 ##### 
+    # 커맨드 실행시 로그 메세지
     async def cmd_logs_msg(self, update: Update):
         user_info = self.user_info_log(update)
         command = update.message.text if update.message else update.callback_query.data

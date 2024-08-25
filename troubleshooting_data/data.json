@@ -1,7 +1,17 @@
 [
     {
         "issue": "인스턴스에 ssh접근이 불가능하며, 인스턴스가 응답하지 않습니다.",
-        "expected_solution": "aws console에서 인스턴스의 상태와 모니터링 로그를 확인하고, 재시작을 시도하십시오."
+        "expected_solution": [
+            "solution-1. aws console에서 인스턴스의 상태와 모니터링 로그를 확인하고, 재시작을 시도하십시오.",
+            "solution-2. "
+        ]
+    },
+    {
+        "issue": "인스턴스에 ssh접근은 가능하지만, 컨테이너가 재시작되지 않습니다.",
+        "expected_solution": [
+            "solution-1. 'docker ps -a' 명령으로 상태를 확인하고, 디스크 용량(df -h, du -sh)을 확인해주세요.",
+            "solution-2. "
+        ]
     },
     {
         "issue": "Failed to initialize pool: Public Key Retrieval is not allowed.\n에러가 발생했습니다. 로그를 확인하여 조치를 취해야 합니다.",
@@ -10,5 +20,13 @@
     {
         "issue": "텔레그램 모니터링 알림방에서 'CPU 80% 임계치 초과'에 대한 알림이 발생했습니다.",
         "expected_solution": "aws console에서 인스턴스의 cpu상태를 확인하고, 인스턴스에 접근하여 cpu를 과도하게 사용중인 프로세스를 확인합니다."
+    },
+    {
+        "issue": "PoolInitializationException: Failed to initialize pool",
+        "expected_solution": "DB 연결을 위한 초기화 작업 진행중입니다. 최대 10분까지 대기해주세요."
+    },
+    {
+        "issue": "Public Key Retrieval is not allowed",
+        "expected_solution": "Public Key의 검색이 허용되지 않았습니다. 파라미터 'allowPublicKeyRetrieval=true'를 application.yml 파일의 jdbc 연결 엔드포인트에 추가합니다."
     }
-]
+] 

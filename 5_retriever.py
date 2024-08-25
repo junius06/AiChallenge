@@ -1,4 +1,5 @@
 import os
+import re
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ConversationHandler, CommandHandler, MessageHandler, filters, ContextTypes
 import asyncio
@@ -9,11 +10,8 @@ import json
 from utils.logs_utils import LoggerUtility
 from config import *
 
-logger_util = LoggerUtility()
-
-# 상태 정의
-PROBLEM_STATE = range(1)
-RETRIEVE_STATE = range(1)
+PROBLEM_STATE = 1
+RETRIEVE_STATE = 2
 
 # /start 명령 처리
 class Start():
@@ -24,15 +22,15 @@ class Start():
         message = (
             "안녕하세요. 신규자 교육용 OJT 챗봇입니다. 다음 명령을 이용할 수 있습니다:\n\n"
             "/retrieve - 특정 키워드로 수집된 에러 케이스를 조회할 수 있습니다.\n"
-            "/training - 트러블 슈팅 트레이닝을 시작할 수 있습니다.\n"
+            "/training - 트러블 슈팅에 대한 트레이닝을 시작할 수 있습니다.\n"
             "/services - 씨피랩스에서 운영중인 서비스에 대하여 소개합니다.\n\n"
             # "<b>CPLABS Bots</b>"
             # "/helpdesk - 씨피랩스 사내 도움을 위한 봇입니다.\n[콩쥐](https://t.me/BeanMouse_securityBot)"
             # "/rules - 씨피랩스 사내 규정 안내를 위한 봇입니다.\n[PEOPLE봇](https://t.me/isms_ss_bot)"
         )
         await self.logger_util.cmd_logs_msg(update)
-        await update.message.reply_text(text=message)
-        
+        await update.message.reply_text(text=message)        
+
 # ChatGPT API를 사용하여 응답 생성
 class ChatGPT():
     def __init__(self):
@@ -81,11 +79,11 @@ class Training:
             
         # 문제 셔플
         self.available_problems = random.sample(self.troubleshooting_data, len(self.troubleshooting_data))
-
+        
     async def cancel_training(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("트레이닝이 취소되었습니다.")
         return ConversationHandler.END
-    
+
     async def start_training(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self.current_problem = 0
         self.issues = []
@@ -127,20 +125,71 @@ class Training:
         await update.message.reply_text(f"평가 결과 :\n{evaluation_text}")
         return ConversationHandler.END
 
+# 에러케이스 검색 클래스
+class Retriever:
+    def __init__(self):
+        self.logger_util = LoggerUtility()
+        # 에러 케이스 데이터 로드
+        data_files_path = os.path.join(os.path.dirname(__file__), 'troubleshooting_data', 'data.json')
+        with open(data_files_path, "r") as file:
+            self.error_cases = json.load(file)
+            
+    def update_user_info(self, update: Update):
+        self.user = self.logger_util.user_info_log(update)
+
+    async def start_retrieving(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        await update.message.reply_text("조회하고 싶은 에러 케이스의 키워드를 입력하세요.")
+        return RETRIEVE_STATE
+
+    async def retrieve_cases(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        keyword = update.message.text.lower()
+        context.user_data['keyword'] = keyword
+        
+        matched_cases = [
+            case for case in self.error_cases if re.search(keyword, case['issue'], re.IGNORECASE)
+        ]
+        
+        try:
+            self.update_user_info(update)
+            
+            if matched_cases:
+                response = "다음 에러 케이스가 검색되었습니다:\n\n"
+                for i, case in enumerate(matched_cases, 1):
+                    response += f"task-{i}. {case['issue']}\n\n" # solution. {case['expected_solution']}\n 답변에 대해 원하면 추가함.
+            else:
+                response = "해당 키워드에 대한 에러 케이스를 찾을 수 없습니다."
+                
+            log_message = f"The user '{self.user}' searched for error cases by keyword '{keyword}'."
+            self.logger_util.log_msg(log_message)
+            
+            await update.message.reply_text(response)
+            
+        except Exception as e:
+            self.logger_util.logger.error(f'Retriever.retrieve_cases - {e}')
+            await update.message.reply_text("오류가 발생했습니다. 다시 시도해주세요.")
+        
+        return ConversationHandler.END
+
 # 메인 함수
 async def main() -> None:
     application = ApplicationBuilder().token(BOT_TOKEN).build()
+    print('Applicatoin Start.')
     
     chatgpt = ChatGPT()
     start_handler = Start()
     training_handler = Training(chatgpt)
+    retriever_handler = Retriever()
     
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("training", training_handler.start_training)],
+        entry_points=[
+            CommandHandler("training", training_handler.start_training),
+            CommandHandler("retrieve", retriever_handler.start_retrieving)
+        ],
         states={
             PROBLEM_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_handler.handle_user_solution)],
+            RETRIEVE_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, retriever_handler.retrieve_cases)],
         },
-        fallbacks=[CommandHandler("/취소", training_handler.cancel_training)],  # Add the fallback here
+        fallbacks=[CommandHandler("cancel", training_handler.cancel_training)],
     )
 
     application.add_handler(CommandHandler("start", start_handler.start))
