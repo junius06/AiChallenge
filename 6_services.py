@@ -47,8 +47,8 @@ class ChatGPT():
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                max_tokens=256, # 256~2048
-                temperature=0.1, # 0~1
+                max_tokens=512, # 256~2048
+                temperature=0.4, # 0~1
                 messages=[
                     {
                         "role": "system", 
@@ -208,9 +208,10 @@ class Services:
     
     async def start_services(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         self.input_command = update.message.text if update.message else update.callback_query.data
+        
         try:
             services_buttons = [ 
-                [InlineKeyboardButton("WEB2X", callback_data='web2x'),
+                 [InlineKeyboardButton("WEB2X", callback_data='web2x'),
                 InlineKeyboardButton("ThePol", callback_data='thepol')],
                 [InlineKeyboardButton("B·Pass", callback_data='bpass'),
                 InlineKeyboardButton("MetaPass", callback_data='metapass')],
@@ -231,30 +232,41 @@ class Services:
             
         return ConversationHandler.END
 
-    async def service_handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def service_handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):        
         query = update.callback_query
         callback_data = query.data
         
+        service_urls = {
+            'web2x': 'https://web2x.io',
+            'thepol': 'https://thepol.com/kr/',
+            'bpass': 'https://www.busan.go.kr/',
+        }
+        self.input_command = update.message.text if update.message else update.callback_query.data
+        callback_data_url = None
+        if self.input_command in service_urls:
+            callback_data_url = service_urls[self.input_command]
+        # debug용으로 출력 (테스트 시 확인용)
+        print(f"callback_data_url: {callback_data_url}")
+            
         try:
             if callback_data == 'cancel':
                 return await self.cancel(update, context)
             
             else:
                 # ChatGPT에 요청할 프롬프트를 구성합니다.
-                print(callback_data) # 안나옴
-                await update.message.reply_text(f"{callback_data} . ") # 안나옴
-                prompt = f"서비스 '{callback_data}'에 대해 설명해 주세요. 그리고 관련된 링크를 제공해 주세요."
+                prompt = f"{callback_data_url}페이지를 확인하여 {callback_data} 플랫폼이 무엇인지 주요 특징과 사용 사례에 대해 설명해 주세요. {callback_data} 서비스는 블록체인을 기반으로 만들어진 플랫폼입니다. 응답 메세지에는 링크와 '블록체인을 기반으로 한 플랫폼' 문구를 포함하지 않습니다."
 
                 # ChatGPT로부터 설명과 링크를 요청합니다.
                 description = await self.chatgpt.request_chat_gpt(prompt)
 
                 # 응답을 사용자에게 전달합니다.
-                await query.message.reply_text(f"{callback_data}에 대해 소개합니다.\n{description}")
+                await query.edit_message_text(f"{callback_data}에 대해 소개합니다.\n{description}\n\n{callback_data_url}")
                 await query.answer()
             
         except Exception as e:
             self.logger_util.logger.error(e)
-            return ConversationHandler.END
+            
+        return ConversationHandler.END
         
 # 메인 함수
 async def main() -> None:
@@ -300,7 +312,8 @@ async def main() -> None:
         },
         fallbacks=[
             CommandHandler("cancel", services_handler.cancel),
-            CallbackQueryHandler(services_handler.cancel, pattern='^cancel$')
+            CallbackQueryHandler(services_handler.cancel, pattern='^cancel$'),
+            CallbackQueryHandler(services_handler.service_handle_callback)
         ]
     )
     

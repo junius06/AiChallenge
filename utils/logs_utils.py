@@ -40,7 +40,7 @@ class LoggerUtility:
                 super().__init__()
                 self.last_logged_time = None
                 
-            # 로그 메세지에 'bot{BOT_TOKEN}' 대신 'botMASKED_TOKEN' 값으로 변환되어 기록
+            # 로그 메세지에 'bot{BOT_TOKEN}' 대신 'botMASKED_TOKEN' 값으로 변환되어 기록 -> 안되고 있는 중...
             def filter(self, record):
                 if BOT_TOKEN in record.getMessage():
                     record.msg = record.msg.replace(BOT_TOKEN, 'MASKED_TOKEN')
@@ -48,7 +48,7 @@ class LoggerUtility:
                 # HTTP Request: POST 메세지에 대해서 10분 간격으로 출력되도록 필터링
                 if "HTTP Request: POST" in record.getMessage():
                     current_time = datetime.now()
-                    if self.last_logged_time is None or current_time - self.last_logged_time > timedelta(minutes=1):
+                    if self.last_logged_time is None or current_time - self.last_logged_time > timedelta(minutes=10):
                         self.last_logged_time = current_time
                         return True
                     return False
