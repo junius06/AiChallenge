@@ -1,7 +1,7 @@
 import os
 import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import ApplicationBuilder, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, CallbackContext
 import asyncio
 import nest_asyncio
 import openai
@@ -23,8 +23,8 @@ class Start():
     async def start(self, update: Update, context) -> None:
         message = (
             "안녕하세요. 신규자 교육용 OJT 챗봇입니다. 다음 명령을 이용할 수 있습니다:\n\n"
-            "/retrieve - 특정 키워드로 수집된 에러 케이스를 조회할 수 있습니다.\n"
             "/training - 트러블 슈팅에 대한 트레이닝을 시작할 수 있습니다.\n"
+            "/retrieving - 특정 키워드로 수집된 에러 케이스를 조회할 수 있습니다.\n"
             "/services - 씨피랩스에서 운영중인 서비스에 대하여 소개합니다.\n\n"
             # "<b>CPLABS Bots</b>"
             # "/helpdesk - 씨피랩스 사내 도움을 위한 봇입니다.\n[콩쥐](https://t.me/BeanMouse_securityBot)"
@@ -33,10 +33,10 @@ class Start():
         await self.logger_util.cmd_logs_msg(update)
         await update.message.reply_text(text=message)
     
-    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        input_command = update.message.text if update.message else update.callback_query.data
-        await update.message.reply_text(f"{input_command} 작업이 종료되었습니다.")
-        return ConversationHandler.END
+    # async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    #     input_command = update.message.text if update.message else update.callback_query.data
+    #     await update.message.reply_text(f"{input_command} 작업이 종료되었습니다.")
+    #     return ConversationHandler.END
 
 # ChatGPT API를 사용하여 응답 생성
 class ChatGPT():
@@ -52,7 +52,7 @@ class ChatGPT():
                 messages=[
                     {
                         "role": "system", 
-                        "content": "당신은 데브옵스 엔지니어이며, 서버와 네트워크에 대한 전문가입니다. 한국어로 응답해주세요."
+                        "content": "당신은 블록체인 회사의 데브옵스 엔지니어이며, 블록체인 및 서버와 네트워크에 대한 전문가입니다. 한국어로 응답해주세요."
                     },
                     {
                         "role": "user",
@@ -88,9 +88,9 @@ class Training:
         # 문제 셔플
         self.available_problems = random.sample(self.troubleshooting_data, len(self.troubleshooting_data))
         
-    # async def cancel_training(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    #     await update.message.reply_text("트레이닝이 취소되었습니다.")
-    #     return ConversationHandler.END
+    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        await update.message.reply_text("트레이닝이 취소되었습니다.")
+        return ConversationHandler.END
 
     async def start_training(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await self.logger_util.cmd_logs_msg(update)
@@ -137,7 +137,7 @@ class Training:
         return ConversationHandler.END
 
 # 에러케이스 검색 클래스
-class Retriever:
+class Retrieving:
     def __init__(self):
         self.logger_util = LoggerUtility()
         # 에러 케이스 데이터 로드
@@ -145,9 +145,9 @@ class Retriever:
         with open(data_files_path, "r") as file:
             self.error_cases = json.load(file)
             
-    # async def cancel_retrievering(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    #     await update.message.reply_text("에러 케이스 검색이 취소되었습니다.")
-    #     return ConversationHandler.END
+    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        await update.message.reply_text("에러 케이스 검색이 취소되었습니다.")
+        return ConversationHandler.END
 
     async def start_retrieving(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await self.logger_util.cmd_logs_msg(update)
@@ -185,21 +185,28 @@ class Retriever:
 
 # 사내 서비스 소개 클래스
 class Services:
-    def __init__(self):
+    def __init__(self, chatgpt: ChatGPT):
         self.logger_util = LoggerUtility()
-        self.chatgpt = ChatGPT()
+        self.chatgpt = chatgpt
     
     # 프로젝트에 대해 굳이 설명을 넣지 않더라도, 버튼 클릭시 해당 키워드(쿼리)로 chatgpt에게 전달하여 설명하도록 함수 생성
     # chatgpt에게 요청할 내용 : 키워드 {PROJECT} 가 어떤 서비스인지, 어디에 사용되는지 등 자세하게 설명하도록 요청
     # 단, bpass와 같이 특정 기관이 사용한다면 일부 학습이 필요할 수 있다.
     # web2x도 그냥 web2x를 입력하면 제대로된 설명이 안나오고, https://web2x.io/ 페이지의 내용을 확인해서 web2x가 무엇을 위한 플랫폼인지 요청해야 제대로 설명해줌.
 
-    # async def cancel_servicing(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    #     await update.message.reply_text("서비스 정보 요청이 취소되었습니다.")
-    #     return ConversationHandler.END
+    async def cancel(self, update: Update, context: CallbackContext):
+        # 메시지가 `update.message`에서 나올 수 있는 경우와 `update.callback_query.message`에서 나올 수 있는 경우를 처리
+        if update.message:
+            # 메시지에서 요청된 경우
+            await update.message.reply_text("서비스 정보 요청이 취소되었습니다.")
+        elif update.callback_query:
+            # 콜백 쿼리에서 요청된 경우
+            await update.callback_query.message.reply_text("서비스 정보 요청이 취소되었습니다.")
+            await update.callback_query.answer()  # 콜백 쿼리 응답을 보냄
+        
+        return ConversationHandler.END
     
-    async def start_servicing(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self.logger_util.cmd_logs_msg(update)
+    async def start_services(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         self.input_command = update.message.text if update.message else update.callback_query.data
         try:
             services_buttons = [ 
@@ -227,22 +234,28 @@ class Services:
     async def service_handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         callback_data = query.data
-
-        if callback_data == 'cancel':
-            await self.cancel_servicing(update, context)
-            return
         
-        # ChatGPT에 요청할 프롬프트를 구성합니다.
-        print(callback_data)
-        prompt = f"서비스 '{callback_data}'에 대해 설명해 주세요. 그리고 관련된 링크를 제공해 주세요."
+        try:
+            if callback_data == 'cancel':
+                return await self.cancel(update, context)
+            
+            else:
+                # ChatGPT에 요청할 프롬프트를 구성합니다.
+                print(callback_data) # 안나옴
+                await update.message.reply_text(f"{callback_data} . ") # 안나옴
+                prompt = f"서비스 '{callback_data}'에 대해 설명해 주세요. 그리고 관련된 링크를 제공해 주세요."
 
-        # ChatGPT로부터 설명과 링크를 요청합니다.
-        description = await self.chatgpt.request_chat_gpt(prompt)
+                # ChatGPT로부터 설명과 링크를 요청합니다.
+                description = await self.chatgpt.request_chat_gpt(prompt)
 
-        # 응답을 사용자에게 전달합니다.
-        await query.answer()
-        await query.message.reply_text(description)
-
+                # 응답을 사용자에게 전달합니다.
+                await query.message.reply_text(f"{callback_data}에 대해 소개합니다.\n{description}")
+                await query.answer()
+            
+        except Exception as e:
+            self.logger_util.logger.error(e)
+            return ConversationHandler.END
+        
 # 메인 함수
 async def main() -> None:
     application = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -251,29 +264,50 @@ async def main() -> None:
     chatgpt = ChatGPT()
     start_handler = Start()
     training_handler = Training(chatgpt)
-    retriever_handler = Retriever()
-    services_handler = Services()
+    retrieving_handler = Retrieving()
+    services_handler = Services(chatgpt)
     
-    conv_handler = ConversationHandler(
+    training_conv_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("training", training_handler.start_training),
-            CommandHandler("retrieve", retriever_handler.start_retrieving),
-            CommandHandler("services", services_handler.start_servicing)
+            CommandHandler("training", training_handler.start_training)
         ],
         states={
-            PROBLEM_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_handler.handle_user_solution)],
-            RETRIEVE_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, retriever_handler.retrieve_cases)],
-            # SERVICE_STATE : [CallbackQueryHandler(services_handler.service_handle_callback)]
-            SERVICE_STATE : [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: None)] #services_handler.start_servicing)]
+            PROBLEM_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_handler.handle_user_solution)]
         },
         fallbacks=[
-            CommandHandler("cancel", start_handler.cancel)]
-            # CommandHandler("cancel", retriever_handler.cancel_retrievering),
-            # CommandHandler("cancel", services_handler.cancel_servicing),]
+            CommandHandler("cancel", training_handler.cancel)
+        ]
+    )
+    
+    retrieving_conv_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("retrieving", retrieving_handler.start_retrieving)
+        ],
+        states={
+            RETRIEVE_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, retrieving_handler.retrieve_cases)]
+        },
+        fallbacks=[
+            CommandHandler("cancel", retrieving_handler.cancel)
+        ]
+    )
+    
+    services_conv_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("services", services_handler.start_services)
+        ],
+        states={
+            SERVICE_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: None)]
+        },
+        fallbacks=[
+            CommandHandler("cancel", services_handler.cancel),
+            CallbackQueryHandler(services_handler.cancel, pattern='^cancel$')
+        ]
     )
     
     application.add_handler(CommandHandler("start", start_handler.start))
-    application.add_handler(conv_handler)
+    application.add_handler(training_conv_handler)
+    application.add_handler(retrieving_conv_handler)
+    application.add_handler(services_conv_handler)
 
     await application.run_polling()
 
