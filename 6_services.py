@@ -26,17 +26,12 @@ class Start():
             "/training - 트러블 슈팅에 대한 트레이닝을 시작할 수 있습니다.\n"
             "/retrieving - 특정 키워드로 수집된 에러 케이스를 조회할 수 있습니다.\n"
             "/services - 씨피랩스에서 운영중인 서비스에 대하여 소개합니다.\n\n"
-            # "<b>CPLABS Bots</b>"
-            # "/helpdesk - 씨피랩스 사내 도움을 위한 봇입니다.\n[콩쥐](https://t.me/BeanMouse_securityBot)"
-            # "/rules - 씨피랩스 사내 규정 안내를 위한 봇입니다.\n[PEOPLE봇](https://t.me/isms_ss_bot)"
+            "*CPLABS Bots*\n"
+            "/helpdesk - 씨피랩스 사내 도움을 위한 봇입니다. [콩쥐](https://t.me/BeanMouse_securityBot)\n"
+            # "/rules - 씨피랩스 사내 규정 안내를 위한 봇입니다. [PEOPLE봇](https://t.me/isms_ss_bot)"
         )
         await self.logger_util.cmd_logs_msg(update)
-        await update.message.reply_text(text=message)
-    
-    # async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    #     input_command = update.message.text if update.message else update.callback_query.data
-    #     await update.message.reply_text(f"{input_command} 작업이 종료되었습니다.")
-    #     return ConversationHandler.END
+        await update.message.reply_text(text=message, parse_mode='Markdown')
 
 # ChatGPT API를 사용하여 응답 생성
 class ChatGPT():
@@ -46,9 +41,9 @@ class ChatGPT():
     async def request_chat_gpt(self, prompt: str) -> str:
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o", # gpt-3.5-turbo
                 max_tokens=512, # 256~2048
-                temperature=0.4, # 0~1
+                temperature=0.3, # 0~1
                 messages=[
                     {
                         "role": "system", 
@@ -95,6 +90,11 @@ class Training:
     async def start_training(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await self.logger_util.cmd_logs_msg(update)
         return await self.present_problem(update, context)
+    # 1. 키워드로 chatGPT에게 문제 제출 요구
+    # 2. 사용자 답변에 대해 해결책과 얼마나 유사한지 평가
+    # 3. 해결 방법 및 보완할 사항
+    # 확장 기능 - 문제를 별도로 저장? (VectorDB 이용하는게 좋을 듯?)
+    # 확장 기능 - 키워드 없이 문제 제공 (VectorDB를 이용해서 랜덤 문제 제출)
 
     async def present_problem(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self.input_command = update.message.text if update.message else update.callback_query.data
@@ -125,7 +125,7 @@ class Training:
     async def evaluate_all_solutions(self, update: Update) -> int:
         evaluation_text = ""
         for i in range(min(len(self.solutions), len(self.user_solutions))):
-            prompt = f"유저가 제공한 해결책이 예상 해결책에 얼마나 가까운지 평가해주세요. : '{self.solutions[i]}'.\n사용자 해결책 : {self.user_solutions[i]}"
+            prompt = f"유저가 제공한 해결책이 예상 해결책에 얼마나 가까운지 평가해주세요. : '{self.solutions[i]}'.\n사용자 해결책 : {self.user_solutions[i]}" # prompt 수정 필요
             evaluation = await self.chatgpt.request_chat_gpt(prompt)
             evaluation_text += f"{i + 1}번 문제 평가 결과: {evaluation}\n\n"
             
@@ -137,7 +137,7 @@ class Training:
         return ConversationHandler.END
 
 # 에러케이스 검색 클래스
-class Retrieving:
+class Retrieving: # 유사한 키워드도 검색 가능하도록 chatGPT 시켜서 요청하기
     def __init__(self):
         self.logger_util = LoggerUtility()
         # 에러 케이스 데이터 로드
@@ -151,7 +151,7 @@ class Retrieving:
 
     async def start_retrieving(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await self.logger_util.cmd_logs_msg(update)
-        await update.message.reply_text("조회하고 싶은 에러 케이스의 키워드를 입력하세요.")
+        await update.message.reply_text("조회하고 싶은 에러 케이스의 키워드를 입력하세요.\n'/cancel' 명령을 입력하여 검색을 종료할 수 있습니다.")
         return RETRIEVE_STATE
 
     async def retrieve_cases(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -188,11 +188,6 @@ class Services:
     def __init__(self, chatgpt: ChatGPT):
         self.logger_util = LoggerUtility()
         self.chatgpt = chatgpt
-    
-    # 프로젝트에 대해 굳이 설명을 넣지 않더라도, 버튼 클릭시 해당 키워드(쿼리)로 chatgpt에게 전달하여 설명하도록 함수 생성
-    # chatgpt에게 요청할 내용 : 키워드 {PROJECT} 가 어떤 서비스인지, 어디에 사용되는지 등 자세하게 설명하도록 요청
-    # 단, bpass와 같이 특정 기관이 사용한다면 일부 학습이 필요할 수 있다.
-    # web2x도 그냥 web2x를 입력하면 제대로된 설명이 안나오고, https://web2x.io/ 페이지의 내용을 확인해서 web2x가 무엇을 위한 플랫폼인지 요청해야 제대로 설명해줌.
 
     async def cancel(self, update: Update, context: CallbackContext):
         # 메시지가 `update.message`에서 나올 수 있는 경우와 `update.callback_query.message`에서 나올 수 있는 경우를 처리
@@ -238,7 +233,7 @@ class Services:
         
         service_urls = {
             'web2x': 'https://web2x.io',
-            'thepol': 'https://thepol.com/kr/',
+            'thepol': 'https://thepol.com/ko/',
             'bpass': 'https://www.busan.go.kr/',
         }
         self.input_command = update.message.text if update.message else update.callback_query.data
@@ -258,9 +253,14 @@ class Services:
 
                 # ChatGPT로부터 설명과 링크를 요청합니다.
                 description = await self.chatgpt.request_chat_gpt(prompt)
+                f1_description = description.replace('**', '')
+                f2_description = re.sub(r'### (.+)', r'** \1 **', description)
 
                 # 응답을 사용자에게 전달합니다.
-                await query.edit_message_text(f"{callback_data}에 대해 소개합니다.\n{description}\n\n{callback_data_url}")
+                await query.edit_message_text(
+                    text=f"{callback_data}에 대해 소개합니다.\n{f2_description}\n\n{callback_data_url}",
+                    parse_mode='Markdown'
+                )
                 await query.answer()
             
         except Exception as e:
