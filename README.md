@@ -122,6 +122,7 @@ Displays a welcome message with instructions on how to use the bot.
 2. **Service Details**: Provides detailed information about the selected service using ChatGPT.
 
 ## Code Structure
+```plaintext
 Main Application  
 │  
 ├── Start  
