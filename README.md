@@ -17,24 +17,17 @@
 
 ## 설치
 
-1. **레포지토리 클론**:
-    ```bash
-    git clone https://github.com/your-repo/telegram-ojt-chatbot.git
-    cd telegram-ojt-chatbot
-    ```
-
-2. **필요한 패키지 설치**:
+1. **필요한 패키지 설치**:
     ```bash
     pip install -r requirements.txt
     ```
 
-3. **환경 설정**:
-    - `config.py.example` 파일의 이름을 `config.py`로 변경합니다.
-    - `config.py`에 봇 토큰과 OpenAI API 키를 추가합니다.
+2. **환경 설정**:
+    - `config.py` 파일과 동일한 경로에서 `.env` 파일을 추가하고, 텔레그램 봇 토큰과 OpenAI API 키를 추가합니다.
 
-4. **봇 실행**:
+3. **봇 실행**:
     ```bash
-    python bot.py
+    python3 bot.py
     ```
 
 ## 사용 방법
@@ -58,7 +51,6 @@
 
 1. **서비스 시작**: CPLABS의 서비스 목록을 버튼으로 표시합니다.
 2. **서비스 상세**: 선택된 서비스에 대한 자세한 정보를 ChatGPT를 통해 제공합니다.
----
 ---
 # Telegram OJT Chatbot (English)
 
@@ -121,8 +113,9 @@ Displays a welcome message with instructions on how to use the bot.
 1. **Start Services**: Shows a list of CPLABS services with buttons for each service.
 2. **Service Details**: Provides detailed information about the selected service using ChatGPT.
 
+---
 ## Code Structure
-```plaintext
+```text
 Main Application  
 │  
 ├── Start  
