@@ -20,6 +20,9 @@ class Start():
     def __init__(self):
         self.logger_util = LoggerUtility()
         
+    def get_command(self):
+        return BotCommand("start", "start the bot")
+        
     async def start(self, update: Update, context) -> None:
         message = (
             "안녕하세요. 신규자 교육용 OJT 챗봇입니다. 다음 명령을 이용할 수 있습니다:\n\n"
@@ -76,12 +79,15 @@ class Training:
         self.current_problem = 0
         
         # 트러블슈팅 데이터 로드
-        data_files_path = os.path.join(os.path.dirname(__file__), 'troubleshooting_data', 'data.json')
+        data_files_path = os.path.join(os.path.dirname(__file__), 'issues_data', 'data.json')
         with open(data_files_path, "r") as file:
-            self.troubleshooting_data = json.load(file)
+            self.issues_data = json.load(file)
             
         # 문제 셔플
-        self.available_problems = random.sample(self.troubleshooting_data, len(self.troubleshooting_data))
+        self.available_problems = random.sample(self.issues_data, len(self.issues_data))
+    
+    def get_command(self):
+        return BotCommand("training", "start a troubleshooting training session")
         
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("트레이닝이 취소되었습니다.")
@@ -138,12 +144,16 @@ class Training:
 
 # 에러케이스 검색 클래스
 class Retrieving: # 유사한 키워드도 검색 가능하도록 chatGPT 시켜서 요청하기
-    def __init__(self):
+    def __init__(self, chatgpt: ChatGPT):
         self.logger_util = LoggerUtility()
+        self.chatgpt = chatgpt
         # 에러 케이스 데이터 로드
-        data_files_path = os.path.join(os.path.dirname(__file__), 'troubleshooting_data', 'data.json')
+        data_files_path = os.path.join(os.path.dirname(__file__), 'issues_data', 'data.json')
         with open(data_files_path, "r") as file:
             self.error_cases = json.load(file)
+            
+    def get_command(self):
+        return BotCommand("retrieving", "search for error cases by keyword")
             
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text("에러 케이스 검색이 취소되었습니다.")
@@ -159,12 +169,33 @@ class Retrieving: # 유사한 키워드도 검색 가능하도록 chatGPT 시켜
         context.user_data['keyword'] = keyword
         user = self.logger_util.user_info_log(update)
         
-        matched_cases = [
-            case for case in self.error_cases if re.search(keyword, case['issue'], re.IGNORECASE)
-        ]
-        
-        self.input_command = update.message.text if update.message else update.callback_query.data
+        # ChatGPT를 통해 유사 키워드 생성
         try:
+            prompt = (
+                f"'{keyword}'와 이를 한국어 또는 영어로 번역한 단어를 키워드로 생성합니다."
+                f"'{keyword}'와 유사한 단어를 생성하지 않습니다. 언어 무관하나, 무조건 동일한 단어만 생성합니다."
+                "'DB'와 같이 축약어의 경우 확장된 단어를 포함하여 생성합니다."
+                "당신은 생성한 단어들만 나열하고, 아무런 응답을 하지 않습니다."
+                "test1, test2 와 같이 ','를 이용하여 나열합니다."
+                "중복되는 단어들은 제거하여 나열합니다."
+            )
+            keywords = await self.chatgpt.request_chat_gpt(prompt)
+            print(f'{keywords}\n')
+            
+            # 유사 키워드 목록을 파싱하여 검색
+            all_keywords = re.split(r',|\n', keywords.strip())
+            all_keywords = [kw.strip().lower() for kw in all_keywords]
+            print(f'{all_keywords}\n')
+            
+            matched_cases = []
+            for keyword in all_keywords:
+                matched_cases.extend([
+                    case for case in self.error_cases if re.search(keyword, case['issue'], re.IGNORECASE)
+                ])
+            print(matched_cases)
+            # 중복 제거
+            matched_cases = list({case['issue']: case for case in matched_cases}.values())
+            print(matched_cases)
             if matched_cases:
                 response = "다음 에러 케이스가 검색되었습니다:\n\n"
                 for i, case in enumerate(matched_cases, 1):
@@ -182,12 +213,39 @@ class Retrieving: # 유사한 키워드도 검색 가능하도록 chatGPT 시켜
             await update.message.reply_text("오류가 발생했습니다. 다시 시도해주세요.")
         
         return ConversationHandler.END
+        
+        # matched_cases = [
+        #     case for case in self.error_cases if re.search(keyword, case['issue'], re.IGNORECASE)
+        # ]
+        
+        # self.input_command = update.message.text if update.message else update.callback_query.data
+        # try:
+        #     if matched_cases:
+        #         response = "다음 에러 케이스가 검색되었습니다:\n\n"
+        #         for i, case in enumerate(matched_cases, 1):
+        #             response += f"task-{i}. {case['issue']}\n\n" # solution. {case['expected_solution']}\n 답변에 대해 원하면 추가함.
+        #     else:
+        #         response = "해당 키워드에 대한 에러 케이스를 찾을 수 없습니다."
+                
+        #     log_message = f"The user '{user}' searched for error cases by keyword '{keyword}'."
+        #     self.logger_util.log_msg(log_message)
+            
+        #     await update.message.reply_text(response)
+            
+        # except Exception as e:
+        #     self.logger_util.logger.error(f"Failed {self.input_command} command function. {e}")
+        #     await update.message.reply_text("오류가 발생했습니다. 다시 시도해주세요.")
+        
+        # return ConversationHandler.END
 
 # 사내 서비스 소개 클래스
 class Services:
     def __init__(self, chatgpt: ChatGPT):
         self.logger_util = LoggerUtility()
         self.chatgpt = chatgpt
+        
+    def get_command(self):
+        return BotCommand("services", "provides information about CPLABS services")
 
     async def cancel(self, update: Update, context: CallbackContext):
         # 메시지가 `update.message`에서 나올 수 있는 경우와 `update.callback_query.message`에서 나올 수 있는 경우를 처리
@@ -276,8 +334,10 @@ async def main() -> None:
     chatgpt = ChatGPT()
     start_handler = Start()
     training_handler = Training(chatgpt)
-    retrieving_handler = Retrieving()
+    retrieving_handler = Retrieving(chatgpt)
     services_handler = Services(chatgpt)
+    
+    commands = [start_handler.get_command(), training_handler.get_command(), retrieving_handler.get_command(), services_handler.get_command()]
     
     training_conv_handler = ConversationHandler(
         entry_points=[
@@ -317,6 +377,7 @@ async def main() -> None:
         ]
     )
     
+    application.bot.set_my_commands(commands)
     application.add_handler(CommandHandler("start", start_handler.start))
     application.add_handler(training_conv_handler)
     application.add_handler(retrieving_conv_handler)
