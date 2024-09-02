@@ -2,7 +2,6 @@ import logging
 import os
 from datetime import datetime, timedelta
 from telegram import Update
-from config import *
 
 class LoggerUtility:
     def __init__(self):
