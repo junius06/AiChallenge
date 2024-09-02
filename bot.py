@@ -44,13 +44,13 @@ class ChatGPT():
     async def request_chat_gpt(self, prompt: str) -> str:
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-4o", # gpt-3.5-turbo
+                model="gpt-4o",
                 max_tokens=512, # 256~2048
                 temperature=0.3, # 0~1
                 messages=[
                     {
                         "role": "system", 
-                        "content": "당신은 블록체인 회사의 데브옵스 엔지니어이며, 블록체인 및 서버와 네트워크에 대한 전문가입니다. 한국어로 응답해주세요."
+                        "content": "당신은 데브옵스 엔지니어이며, 블록체인 및 서버와 네트워크에 대한 전문가입니다. 한국어로 응답해주세요."
                     },
                     {
                         "role": "user",
@@ -96,11 +96,6 @@ class Training:
     async def start_training(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await self.logger_util.cmd_logs_msg(update)
         return await self.present_problem(update, context)
-    # 1. 키워드로 chatGPT에게 문제 제출 요구
-    # 2. 사용자 답변에 대해 해결책과 얼마나 유사한지 평가
-    # 3. 해결 방법 및 보완할 사항
-    # 확장 기능 - 문제를 별도로 저장? (VectorDB 이용하는게 좋을 듯?)
-    # 확장 기능 - 키워드 없이 문제 제공 (VectorDB를 이용해서 랜덤 문제 제출)
 
     async def present_problem(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self.input_command = update.message.text if update.message else update.callback_query.data
@@ -131,7 +126,10 @@ class Training:
     async def evaluate_all_solutions(self, update: Update) -> int:
         evaluation_text = ""
         for i in range(min(len(self.solutions), len(self.user_solutions))):
-            prompt = f"유저가 제공한 해결책이 예상 해결책에 얼마나 가까운지 평가해주세요. : '{self.solutions[i]}'.\n사용자 해결책 : {self.user_solutions[i]}" # prompt 수정 필요
+            prompt = [
+                f"유저가 제공한 해결책이 예상 해결책에 얼마나 가까운지 평가해주세요. : '{self.solutions[i]}'.\n사용자 해결책 : {self.user_solutions[i]}"
+                "예상 해결책에서 보완이 필요한 내용을 추가해서 설명해주세요."
+            ]
             evaluation = await self.chatgpt.request_chat_gpt(prompt)
             evaluation_text += f"{i + 1}번 문제 평가 결과: {evaluation}\n\n"
             
@@ -139,7 +137,7 @@ class Training:
         if len(self.solutions) != len(self.user_solutions):
             evaluation_text += "경고: 예상 해결책과 사용자가 제공한 해결책의 수가 일치하지 않습니다.\n"
         
-        await update.message.reply_text(f"평가 결과 :\n{evaluation_text}")
+        await update.message.reply_text(f"평가 결과 :\n{evaluation_text}", parse_mode='Markdown')
         return ConversationHandler.END
 
 # 에러케이스 검색 클래스
@@ -177,7 +175,7 @@ class Retrieving: # 유사한 키워드도 검색 가능하도록 chatGPT 시켜
                 "'DB'와 같이 축약어의 경우 확장된 단어를 포함하여 생성합니다."
                 "당신은 생성한 단어들만 나열하고, 아무런 응답을 하지 않습니다."
                 "test1, test2 와 같이 ','를 이용하여 나열합니다."
-                "중복되는 단어들은 제거하여 나열합니다."
+                "중복되는 단어들은 제거하여 나열합니다." # 대소문자 구분을 확실히 하는 중 -
             )
             keywords = await self.chatgpt.request_chat_gpt(prompt)
             print(f'{keywords}\n')
@@ -206,7 +204,7 @@ class Retrieving: # 유사한 키워드도 검색 가능하도록 chatGPT 시켜
             log_message = f"The user '{user}' searched for error cases by keyword '{keyword}'."
             self.logger_util.log_msg(log_message)
             
-            await update.message.reply_text(response)
+            await update.message.reply_text(response, parse_mode='Markdown')
             
         except Exception as e:
             self.logger_util.logger.error(f"Failed {self.input_command} command function. {e}")
@@ -325,7 +323,7 @@ class Services:
             self.logger_util.logger.error(e)
             
         return ConversationHandler.END
-        
+
 # 메인 함수
 async def main() -> None:
     application = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -377,7 +375,7 @@ async def main() -> None:
         ]
     )
     
-    application.bot.set_my_commands(commands)
+    # application.bot.set_my_commands(commands)
     application.add_handler(CommandHandler("start", start_handler.start))
     application.add_handler(training_conv_handler)
     application.add_handler(retrieving_conv_handler)
