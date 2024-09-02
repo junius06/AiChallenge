@@ -1,14 +1,15 @@
 import os
 import re
-# import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import ApplicationBuilder, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, CallbackContext
+import numpy as np
 import asyncio
 import nest_asyncio
 import openai
+from openai.embeddings_utils import get_embedding
 import random
 import json
-import joblib
 from utils.logs_utils import LoggerUtility
 from config import *
 
@@ -84,12 +85,13 @@ class Training:
         # 트러블슈팅 데이터 로드
         vectorized_data_path = os.path.join(os.path.dirname(__file__), 'issues_data', 'embedding_data.json')
         with open(vectorized_data_path, "rb") as file:  # Use binary mode
-            data = joblib.load(file)
-            self.vectorized_data = data['vectorized_data']
-            self.issue_data = data['issue_data']  # Ensure your data includes this
+            self.embedding_data = json.load(file)
         
-        # Shuffle the issues
-        self.available_issues = list(range(len(self.issue_data)))  # Indexes of the issues
+        self.issue_embeddings = np.array([item['issue_embedding'] for item in self.embedding_data])
+        self.issue_data = self.embedding_data
+
+        # Shuffle the issues for random selection
+        self.available_issues = list(range(len(self.issue_data)))
         random.shuffle(self.available_issues)
         
     def get_command(self):
@@ -143,7 +145,7 @@ class Training:
                 messages = f"{callback_data}을 클릭하여 입력하는 키워드와 유사한 문제가 제공됩니다. 원하시는 키워드를 입력하세요.\n'/cancel' 명령으로 트레이닝을 종료할 수 있습니다."
                 await query.edit_message_text(text=messages)
                                 
-                return await self.keyword_issues(update, context)
+                return await self.keyword_embedding(update, context)
             
             self.logger_util.logger.info(update)
             return TRAINING_QUERY_STATE
@@ -153,44 +155,95 @@ class Training:
             await context.bot.send_message(chat_id=update.effective_chat.id, text="오류가 발생했습니다. 다시 시도해주세요.")
             return ConversationHandler.END
     
-    # async def keyword_issues(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    #     user_keyword = update.message.text.lower()
+    async def keyword_embedding(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        user_keyword = update.message.text.lower() #update.callback_query.message.text.lower()
+        print(f'키워드 임베딩 ==== {user_keyword}')
+        # user_embedding = get_embedding(user_keyword)
         
-    #     # Compute the similarity between the user input and the issues
-    #     user_vector = self.vectorizer.transform([user_keyword])
-    #     cosine_similarities = cosine_similarity(user_vector, self.tfidf_matrix).flatten()
-    #     similar_indices = cosine_similarities.argsort()[-self.num_issues:][::-1]
+        try:
+            response = openai.Embedding.create(
+                model='text-embedding-ada-002',
+                input=user_keyword
+            )
+            embedding = response['data'][0]['embedding']
+            print(embedding)
+            return np.array(embedding)
+        except openai.error.InvalidRequestError as e:
+            print(f"API 요청 오류: {e}")
+            return np.array([])  # 빈 배열 반환
+        except Exception as e:
+            print(f"예상치 못한 오류: {e}")
+            return np.array([])  # 빈 배열 반환
         
-    #     # Collect the top similar issues
-    #     self.available_problems = [self.issue_data[i] for i in similar_indices]
+    # async def keyword_cos_sim(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    #     # Compute similarity between user keyword and stored issues
+    #     similarities = cosine_similarity([user_embedding], self.issue_embeddings).flatten()
+    #     print(similarities)
+    #     top_indices = similarities.argsort()[-5:][::-1]  # Get indices of top 5 similar issues
+    #     print(top_indices)
+        
+    #     self.keyword_embedding = [self.issue_data[i] for i in top_indices]
+    #     print(self.keyword_embedding)
     #     self.current_issue = 0
+        
     #     return await self.provides_issues(update, context)
 
-    ################################################################################################
     async def provides_issues(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         print("provides_issues 함수 시작")
         # message = update.message if update.message else update.callback_query.message
         # self.input_command = update.message.text if update.message else update.callback_query.data
         try:
-            if self.current_issue < self.num_issues and self.available_issues:
-                problem_index = self.available_issues.pop(0)  # Get index of the next issue
-                problem = self.issue_data[problem_index]  # Get the actual issue data
-                self.issues.append(problem["issue"])
-                self.solutions.append(problem["expected_solution"])
+            if self.current_issue < self.num_issues:
+                if self.keyword_embedding:
+                    # Provide issues based on keyword similarity
+                    issues_to_use = self.keyword_embedding
+                else:
+                    # Provide random issues
+                    issues_to_use = self.available_issues
                 
-                if self.current_issue == 0:
-                    await update.callback_query.message.reply_text(f"총 {self.num_issues}개의 문제가 제공됩니다. 문제를 해결하기 위한 방안을 제시하세요.\n'/cancel' 명령을 입력하여 트레이닝을 종료할 수 있습니다.")
-                    
-                await update.callback_query.message.reply_text(f"{self.current_issue + 1}번 문제 : {self.issues[self.current_issue]}")
-                self.current_issue += 1
+                if issues_to_use:
+                    problem_index = issues_to_use.pop(0)  # Get index of the next issue
+                    problem = self.issue_data[problem_index]  # Get the actual issue data
+                    self.issues.append(problem["issue"])
+                    self.solutions.append(problem["expected_solution"])
+
+                    if self.current_issue == 0:
+                        await update.callback_query.message.reply_text(f"총 {self.num_issues}개의 문제가 제공됩니다. 문제를 해결하기 위한 방안을 제시하세요.\n'/cancel' 명령을 입력하여 트레이닝을 종료할 수 있습니다.")
+
+                    await update.callback_query.message.reply_text(f"{self.current_issue + 1}번 문제 : {self.issues[self.current_issue]}")
+                    self.current_issue += 1
+                else:
+                    await update.callback_query.message.reply_text("제공할 문제가 없습니다.")
+                    return await self.evaluate_all_solutions(update)
+                
                 return ISSUE_STATE
             else:
                 return await self.evaluate_all_solutions(update)
-            
+
         except Exception as e:
-            self.logger_util.logger.error(f"Failed {self.input_command} command function. {e}")
+            self.logger_util.logger.error(f"Failed in provides_issues function: {e}")
             await update.callback_query.message.reply_text("오류가 발생했습니다. 다시 시도해주세요.")
             return ConversationHandler.END
+        # try:
+        #     if self.current_issue < self.num_issues and self.available_issues:
+        #         problem_index = self.available_issues.pop(0)  # Get index of the next issue
+        #         problem = self.issue_data[problem_index]  # Get the actual issue data
+        #         self.issues.append(problem["issue"])
+        #         self.solutions.append(problem["expected_solution"])
+                
+        #         if self.current_issue == 0:
+        #             await update.callback_query.message.reply_text(f"총 {self.num_issues}개의 문제가 제공됩니다. 문제를 해결하기 위한 방안을 제시하세요.\n'/cancel' 명령을 입력하여 트레이닝을 종료할 수 있습니다.")
+                    
+        #         await update.callback_query.message.reply_text(f"{self.current_issue + 1}번 문제 : {self.issues[self.current_issue]}")
+        #         self.current_issue += 1
+        #         return ISSUE_STATE
+        #     else:
+        #         return await self.evaluate_all_solutions(update)
+            
+        # except Exception as e:
+        #     self.logger_util.logger.error(f"Failed {self.input_command} command function. {e}")
+        #     await update.callback_query.message.reply_text("오류가 발생했습니다. 다시 시도해주세요.")
+        #     return ConversationHandler.END
         
     async def handle_user_solution(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         self.user_solutions.append(update.callback_query.message.text)
@@ -220,7 +273,7 @@ class Retrieving: # 유사한 키워드도 검색 가능하도록 chatGPT 시켜
         self.logger_util = LoggerUtility()
         self.chatgpt = chatgpt
         # 에러 케이스 데이터 로드
-        data_files_path = os.path.join(os.path.dirname(__file__), 'issue_data', 'data.json')
+        data_files_path = os.path.join(os.path.dirname(__file__), 'issues_data', 'data.json')
         with open(data_files_path, "r") as file:
             self.error_cases = json.load(file)
             
